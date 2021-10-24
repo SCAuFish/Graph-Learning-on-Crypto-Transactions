@@ -16,15 +16,16 @@ WITH transactions AS (
     WHERE receipt_status IS NOT NULL AND receipt_status=1 AND value > WEI_IN_ETHER
 )
 SELECT recent_credits.from_address AS address, recent_credits.buffer_step,
-	recent_credits.recent_credit, recent_debits.recent_debit FROM 
+	recent_credits.recent_credit, recent_debits.recent_debit,
+	recent_credits.credit_operation_count, recent_debits.debit_operation_count FROM 
     (
-        SELECT from_address, buffer_step, SUM(value) AS recent_credit
+        SELECT from_address, buffer_step, SUM(value) AS recent_credit, COUNT(*) AS credit_operation_count
 		FROM transactions 
 		GROUP BY from_address, buffer_step
     ) AS recent_credits 
 	INNER JOIN
 	(
-		SELECT to_address, buffer_step, SUM(value) AS recent_debit
+		SELECT to_address, buffer_step, SUM(value) AS recent_debit, COUNT(*) AS debit_operation_count
 		FROM transactions
 		GROUP BY to_address, buffer_step
 	) AS recent_debits
