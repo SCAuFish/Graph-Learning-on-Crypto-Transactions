@@ -17,6 +17,7 @@ WITH transactions AS (
 )
 SELECT MIN(block_timestamp) AS start_time, MAX(block_timestamp) AS end_time, 
 	MIN(gas_price) AS min_gas_price, MAX(gas_price) AS max_gas_price, AVG(gas_price) AS avg_gas_price,
+    COUNT(*) AS transaction_count,
 	time_step
 FROM transactions
 GROUP BY time_step
