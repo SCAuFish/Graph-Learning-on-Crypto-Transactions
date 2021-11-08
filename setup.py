@@ -16,7 +16,7 @@ setuptools.setup(
     author="Cheng Shen",
     author_email="shenchg126@gmail.com",
     description="Everything you need to build and analyze transaction data",
-    packages=['graph_tools', 'graph_tools.components'],
+    packages=['graph_tools', 'graph_tools.components', 'graph_tools.data_utils'],
     include_package_data=True,
     python_requires='>=3.8',
     install_requires=reqs,

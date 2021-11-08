@@ -21,12 +21,13 @@ class TransactionGraph:
 
         for time_step in tqdm.tqdm(all_time_steps):
             self.time_series_graph[time_step] = DiGraph()
-            self.time_series_graph[time_step].add_edges_from(graph_generator.generate_edges(self.should_exclude))
+            self.time_series_graph[time_step].add_edges_from(graph_generator.generate_edges(self.get_filter(time_step)))
 
-    @staticmethod
-    def should_exclude(from_address: str, to_address: str, amount: float, time_step: int):
-        return False
+    def get_filter(self, specified_time_step: int):
+        def should_exclude(from_address: str, to_address: str, amount: float, time_step: int):
+            return time_step != specified_time_step
 
+        return should_exclude
 
 class GraphGenerator:
     def __init__(self, transaction_file):
