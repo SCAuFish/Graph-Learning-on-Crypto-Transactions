@@ -43,7 +43,7 @@ class GraphGenerator:
                     # skip header line
                     continue
 
-                from_address, to_address, amount, trans_time_step = line.strip().split(',')
+                from_address, to_address, amount, trans_time_step, price, price_time = line.strip().split(',')
                 if should_exclude(from_address, to_address, float(amount), int(trans_time_step)):
                     continue
 
@@ -52,7 +52,8 @@ class GraphGenerator:
                 if to_address not in self.address2idx:
                     self.address2idx[to_address] = len(self.address2idx)
 
-                yield self.address2idx[from_address], self.address2idx[to_address], {'amount': amount}
+                yield self.address2idx[from_address], self.address2idx[to_address], \
+                    {'amount': float(amount), 'time_step':int(trans_time_step), 'price': float(price)}
 
     def _all_time_steps(self) -> list:
         all_time_steps = set()
@@ -61,7 +62,7 @@ class GraphGenerator:
                 if i == 0:
                     continue
 
-                _, _, _, time_step_str = line.strip().split(',')
+                _, _, _, time_step_str, _, _ = line.strip().split(',')
                 all_time_steps.add(int(time_step_str))
 
         return sorted(list(all_time_steps))
@@ -80,7 +81,7 @@ class GraphGenerator:
                 if i == 0:
                     continue
 
-                from_address, to_address, _, _ = line.strip().split(',')
+                from_address, to_address, _, _, _, _ = line.strip().split(',')
                 address_count[from_address] += 1
                 address_count[to_address] += 1
 
