@@ -84,7 +84,9 @@ class SingleGraphLoader:
     def _load_price_data(self):
         time_to_price = dict()
         with open(self.price_file, 'r') as reader:
-            for line in reader:
+            for i, line in enumerate(reader):
+                if i == 0:
+                    continue
                 time_stamp, _, _, _, _, _, _, price = line.split(',')
                 time_stamp = datetime.timestamp(parser.parse(time_stamp))
                 price = float(price)
