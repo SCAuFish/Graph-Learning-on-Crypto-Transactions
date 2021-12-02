@@ -3,6 +3,8 @@ Load data from full file into a graph. Could be revised for better effiency and 
 """
 from networkx import MultiDiGraph
 import random
+from dateutil import parser
+from datetime import datetime
 
 from graph_tools.components.graph import GraphGenerator
 
@@ -10,7 +12,7 @@ class SingleGraphLoader:
     """
     Load a single graph each time from the file
     """
-    def __init__(self, transaction_csv_file, *,
+    def __init__(self, transaction_csv_file, price_file, time_conversion_file, *,
                  random_seed=7, k_hop=5, time_step_interval=168, incoming_sampling=5, outgoing_sampling=5):
         """
 
@@ -21,6 +23,8 @@ class SingleGraphLoader:
         :param time_step_interval: default is 168, which is 7 * 24 = 1 week of data
         """
         self.trasaction_csv_file = transaction_csv_file
+        self.price_file = price_file
+        self.time_conversion_file = time_conversion_file
 
         # hyperparams when loading
         self.random_seed = random_seed
@@ -31,6 +35,11 @@ class SingleGraphLoader:
         self.incoming_sampling=5
         self.outgoing_sampling=5
 
+        # load price info
+        self.time2prices = self._load_price_data()
+        # load time step to time stamp
+        self.timestep_to_stamp = self._load_time_conversion()
+        self.timestep_to_prices = dict()
         # Generate a graph that includes all nodes and edges
         self._graph = MultiDiGraph()
         self._graph_generator = GraphGenerator(transaction_csv_file)
@@ -59,7 +68,42 @@ class SingleGraphLoader:
                 sampled_graph = MultiDiGraph()
                 sampled_graph.add_edges_from(edges)
 
-                yield sampled_graph
+                yield sampled_graph, time_step
+
+    def find_price(self, time_step:int) -> float:
+        if time_step in self.timestep_to_prices:
+            return self.timestep_to_prices[time_step]
+
+        min_time_stamp, max_time_stamp = self.timestep_to_stamp[time_step]
+        for time_stamp, price in self.time2prices.items():
+            if time_stamp >= min_time_stamp and time_stamp < max_time_stamp:
+                self.timestep_to_prices[time_step] = price
+                return price
+
+
+    def _load_price_data(self):
+        time_to_price = dict()
+        with open(self.price_file, 'r') as reader:
+            for line in reader:
+                time_stamp, _, _, _, _, _, _, price = line.split(',')
+                time_stamp = datetime.timestamp(parser.parse(time_stamp))
+                price = float(price)
+                time_to_price[time_stamp] = price
+
+        return time_to_price
+
+    def _load_time_conversion(self):
+        timestep_to_stamp = dict()
+        with open(self.time_conversion_file, 'r') as reader:
+            for i, line in enumerate(reader):
+                if i == 0:
+                    continue
+
+                step, min_time, max_time = line.strip().split(',')
+
+                timestep_to_stamp[int(step)] = (datetime.timestamp(parser.parse(min_time)),
+                                                datetime.timestamp(parser.parse(max_time)))
+        return timestep_to_stamp
 
     def _find_edge_bfs(self, frontier, edges_to_populate, visited, sampled_time_step, k_hop):
         if k_hop == 0 or len(frontier) == 0:
