@@ -18,6 +18,6 @@ setuptools.setup(
     description="Everything you need to build and analyze transaction data",
     packages=['graph_tools', 'graph_tools.components', 'graph_tools.data_utils'],
     include_package_data=True,
-    python_requires='>=3.8',
+    python_requires='>=3.7',
     install_requires=reqs,
     )
