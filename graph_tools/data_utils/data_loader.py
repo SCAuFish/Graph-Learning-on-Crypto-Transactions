@@ -10,7 +10,7 @@ class SingleGraphLoader:
     """
     Load a single graph each time from the file
     """
-    def __init__(self, transaction_csv_file, price_file, balance_file=None, *,
+    def __init__(self, transaction_csv_file, *,
                  random_seed=7, k_hop=5, time_step_interval=168, incoming_sampling=5, outgoing_sampling=5):
         """
 
@@ -21,8 +21,6 @@ class SingleGraphLoader:
         :param time_step_interval: default is 168, which is 7 * 24 = 1 week of data
         """
         self.trasaction_csv_file = transaction_csv_file
-        self.price_file = price_file
-        self.balance_file = balance_file
 
         # hyperparams when loading
         self.random_seed = random_seed
