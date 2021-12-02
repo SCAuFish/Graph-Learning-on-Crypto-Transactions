@@ -40,6 +40,7 @@ class SingleGraphLoader:
         # load time step to time stamp
         self.timestep_to_stamp = self._load_time_conversion()
         self.timestep_to_prices = dict()
+        self.max_time_step = 0
         # Generate a graph that includes all nodes and edges
         self._graph = MultiDiGraph()
         self._graph_generator = GraphGenerator(transaction_csv_file)
@@ -105,6 +106,7 @@ class SingleGraphLoader:
 
                 timestep_to_stamp[int(step)] = (datetime.timestamp(parser.parse(min_time)),
                                                 datetime.timestamp(parser.parse(max_time)))
+                self.max_time_step = max(int(step), self.max_time_step)
         return timestep_to_stamp
 
     def _find_edge_bfs(self, frontier, edges_to_populate, visited, sampled_time_step, k_hop):
