@@ -77,11 +77,20 @@ class SingleGraphLoader:
             return self.timestep_to_prices[time_step]
 
         min_time_stamp, max_time_stamp = self.timestep_to_stamp[time_step]
+        closest_min, closest_max = min_time_stamp - 1000000000, max_time_stamp + 1000000000
+        price_at_closest_min, price_at_closes_max = 0, 0
         for time_stamp, price in self.time2prices.items():
             if time_stamp >= min_time_stamp and time_stamp < max_time_stamp:
                 self.timestep_to_prices[time_step] = price
                 return price
+            if time_stamp < min_time_stamp and time_stamp > closest_min:
+                closest_min = time_stamp
+                price_at_closest_min = price
+            if time_stamp >= max_time_stamp and time_stamp < closest_max:
+                closest_min = time_stamp
+                price_at_closest_max = price
 
+        return (price_at_closest_min + price_at_closest_max) / 2
 
     def _load_price_data(self):
         time_to_price = dict()
