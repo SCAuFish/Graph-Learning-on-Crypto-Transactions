@@ -70,7 +70,7 @@ class SingleGraphLoader:
                 sampled_graph = MultiDiGraph()
                 sampled_graph.add_edges_from(edges)
 
-                yield sampled_graph, time_step
+                yield sampled_graph, time_step, node
 
     def find_price(self, time_step:int) -> float:
         if time_step in self.timestep_to_prices:
