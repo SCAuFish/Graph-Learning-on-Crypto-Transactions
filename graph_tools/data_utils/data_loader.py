@@ -13,7 +13,8 @@ class SingleGraphLoader:
     Load a single graph each time from the file
     """
     def __init__(self, transaction_csv_file, price_file, time_conversion_file, *,
-                 random_seed=7, k_hop=5, time_step_interval=168, incoming_sampling=5, outgoing_sampling=5):
+                 random_seed=7, k_hop=5, time_step_interval=168, incoming_sampling=5, outgoing_sampling=5,
+                 skip_graph_generation=False):
         """
 
         :param transaction_csv_file:
@@ -43,10 +44,11 @@ class SingleGraphLoader:
         self.timestep_to_stamp = self._load_time_conversion()
         self.timestep_to_prices = dict()
         # Generate a graph that includes all nodes and edges
-        self._graph = MultiDiGraph()
-        self._graph_generator = GraphGenerator(transaction_csv_file)
-        self._graph.add_edges_from(self._graph_generator.generate_edges(lambda src, tgt, amt, t: False))
-        print(f"Full graph contains {len(self._graph.nodes)} nodes and {len(self._graph.edges)} edges")
+        if not skip_graph_generation:
+            self._graph = MultiDiGraph()
+            self._graph_generator = GraphGenerator(transaction_csv_file)
+            self._graph.add_edges_from(self._graph_generator.generate_edges(lambda src, tgt, amt, t: False))
+            print(f"Full graph contains {len(self._graph.nodes)} nodes and {len(self._graph.edges)} edges")
 
     def __iter__(self):
         for node, _ in self._graph.nodes.items():
