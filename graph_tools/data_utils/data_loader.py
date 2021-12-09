@@ -1,171 +1,131 @@
-"""
-Load data from full file into a graph. Could be revised for better effiency and adaptability
-"""
-from networkx import MultiDiGraph
-import random
-from dateutil import parser
-from datetime import datetime
+from torch_geometric.data import HeteroData
+from tqdm import tqdm
+import torch
 
-from graph_tools.components.graph import GraphGenerator
+def sort_by_time_step(input_csv_file):
+  rows = []
+  with open(input_csv_file, 'r') as reader:
+    for i, line in enumerate(reader):
+      if i == 0:
+        continue
 
-class SingleGraphLoader:
-    """
-    Load a single graph each time from the file
-    """
-    def __init__(self, transaction_csv_file, price_file, time_conversion_file, *,
-                 random_seed=7, k_hop=5, time_step_interval=168, incoming_sampling=5, outgoing_sampling=5,
-                 skip_graph_generation=False):
-        """
+      from_addr, to_addr, amount, time_step, price, _, countnode_seller,countbuy_seller,countsell_seller,countnode_buyer,countbuy_buyer,countsell_buyer = line.split(',')
+      amount = float(amount)
+      time_step = int(time_step)
+      price = float(price)
+      countnode_seller,countbuy_seller,countsell_seller,countnode_buyer,countbuy_buyer,countsell_buyer = \
+        [int(var) for var in [countnode_seller,countbuy_seller,countsell_seller,countnode_buyer,countbuy_buyer,countsell_buyer]]
+      rows.append([from_addr, to_addr, amount, time_step, price, countnode_seller,countbuy_seller,countsell_seller,countnode_buyer,countbuy_buyer,countsell_buyer])
 
-        :param transaction_csv_file:
-        :param price_file:
-        :param balance_file:
-        :param k_hop:
-        :param time_step_interval: default is 168, which is 7 * 24 = 1 week of data
-        """
-        self.trasaction_csv_file = transaction_csv_file
-        self.price_file = price_file
-        self.time_conversion_file = time_conversion_file
+    return sorted(rows, key=lambda t: t[3])
 
-        # hyperparams when loading
-        self.random_seed = random_seed
-        if self.random_seed is not None:
-            random.seed(self.random_seed)
-        self.k_hop = k_hop
-        self.time_step_interval = time_step_interval
-        self.incoming_sampling=5
-        self.outgoing_sampling=5
 
-        # load price info
-        self.time2prices = self._load_price_data()
-        # load time step to time stamp
-        self.max_time_step = 0
-        self.min_time_step = 100000
-        self.timestep_to_stamp = self._load_time_conversion()
-        self.timestep_to_prices = dict()
-        # Generate a graph that includes all nodes and edges
-        if not skip_graph_generation:
-            self._graph = MultiDiGraph()
-            self._graph_generator = GraphGenerator(transaction_csv_file)
-            self._graph.add_edges_from(self._graph_generator.generate_edges(lambda src, tgt, amt, t: False))
-            print(f"Full graph contains {len(self._graph.nodes)} nodes and {len(self._graph.edges)} edges")
+def load_hetero_data(csv_file, node_attr_dim=8):
+  global_graph_data = HeteroData()
 
-    def __iter__(self):
-        for node, _ in self._graph.nodes.items():
-            predecessors = self._graph.predecessors(node)
-            predecessors = list(predecessors)
-            if len(predecessors) == 0:
-                continue
+  addr_time_step_to_index = dict()
+  idx_to_features = dict()
+  latest_addr_appearnce = dict()
+  same_addr_relations = dict()
+  transfer_to_relation = dict()
+  idx_to_addr = dict()
+  addr_node_count = dict()
+  current_idx = 0
+  rows = sort_by_time_step(csv_file)
+  for i, (from_addr, to_addr, amount, time_step, price, countnode_seller,countbuy_seller,countsell_seller,countnode_buyer,countbuy_buyer,countsell_buyer) in tqdm(enumerate(rows)):
+    if i == 0:
+      continue
 
-            predecessor = random.choice(predecessors)
-            time_steps = []
-            for k, v in self._graph.get_edge_data(predecessor, node).items():
-                time_steps.append(v['time_step'])
+    from_addr_time_step = (from_addr, time_step)
+    to_addr_time_step = (to_addr, time_step)
+    addr_node_count[from_addr] = countnode_seller
+    addr_node_count[to_addr] = countnode_buyer
 
-            for time_step in time_steps:
-                time_step = random.choice(time_steps)
+    # get index for the (addr, time_step) pair
+    if from_addr_time_step not in addr_time_step_to_index:
+      addr_time_step_to_index[from_addr_time_step] = current_idx
+      idx_to_addr[current_idx] = from_addr
+      current_idx += 1
+    if to_addr_time_step not in addr_time_step_to_index:
+      addr_time_step_to_index[to_addr_time_step] = current_idx
+      idx_to_addr[current_idx] = to_addr
+      current_idx += 1
+    from_addr_idx = addr_time_step_to_index[from_addr_time_step]
+    to_addr_idx = addr_time_step_to_index[to_addr_time_step]
 
-                edges = []
-                visited = set()
-                self._find_edge_bfs({node}, edges, visited, time_step, k_hop=self.k_hop)
+    # update node features
+    if from_addr_idx in idx_to_features:
+      in_amount, out_amount, pre_price, pre_time_step, countnode_seller,countbuy_seller,countsell_seller = idx_to_features[from_addr_idx]
+      assert pre_price == price
+      assert pre_time_step == time_step
+      idx_to_features[from_addr_idx] = (in_amount, out_amount + amount, price, time_step, countnode_seller,countbuy_seller,countsell_seller)
+    else:
+      idx_to_features[from_addr_idx] = (0, amount, price, time_step, countnode_seller,countbuy_seller,countsell_seller)
+    if to_addr_idx in idx_to_features:
+      in_amount, out_amount, pre_price, pre_time_step, countnode_buyer,countbuy_buyer,countsell_buyer = idx_to_features[to_addr_idx]
+      assert pre_price == price, f'previously: {pre_price}; current {price}'
+      assert pre_time_step == time_step
+      idx_to_features[to_addr_idx] = (in_amount + amount, out_amount, price, time_step, countnode_buyer,countbuy_buyer,countsell_buyer)
+    else:
+      idx_to_features[to_addr_idx] = (amount, 0, price, time_step, countnode_buyer,countbuy_buyer,countsell_buyer)
 
-                sampled_graph = MultiDiGraph()
-                sampled_graph.add_edges_from(edges)
+    # add transfer-to relation
+    transfer_to_relation[(from_addr_idx, to_addr_idx)] \
+      = {'amount': amount, 'time_step': time_step, 'price': price}
 
-                yield sampled_graph, time_step, node
+    # add same-as relation
+    if from_addr in latest_addr_appearnce:
+      latest_time_step = latest_addr_appearnce[from_addr]
+      assert latest_time_step <= time_step, f"latest: {latest_time_step}, curr: {time_step}"
+      latest_idx = addr_time_step_to_index[(from_addr, latest_time_step)]
+      if latest_idx != from_addr_idx:
+        same_addr_relations[
+          (latest_idx,from_addr_idx)
+          ] = {'amount': amount, 'time_step': time_step, 'price': price}
+    latest_addr_appearnce[from_addr] = time_step
+    if to_addr in latest_addr_appearnce:
+      latest_time_step = latest_addr_appearnce[to_addr]
+      assert latest_time_step <= time_step, f"latest: {latest_time_step}, curr: {time_step}"
+      latest_idx = addr_time_step_to_index[(to_addr, latest_time_step)]
+      if latest_idx != to_addr_idx:
+        same_addr_relations[
+          (latest_idx,to_addr_idx)
+          ] = {'amount': amount, 'time_step': time_step, 'price': price}
+    latest_addr_appearnce[to_addr] = time_step
 
-    def find_price(self, time_step:int) -> float:
-        if time_step in self.timestep_to_prices:
-            return self.timestep_to_prices[time_step]
+  node_count = len(addr_time_step_to_index.keys())
+  same_addr_relation_count = len(same_addr_relations.keys())
+  transfer_to_relation_count = len(transfer_to_relation.keys())
+  all_edges = set(same_addr_relations.keys()).union(set(transfer_to_relation.keys()))
+  has_relation_count = len(all_edges)
+  print(same_addr_relation_count, transfer_to_relation_count, has_relation_count)
 
-        min_time_stamp, max_time_stamp = self.timestep_to_stamp[time_step]
-        closest_min, closest_max = min_time_stamp - 1000000000, max_time_stamp + 1000000000
-        price_at_closest_min, price_at_closes_max = 0, 0
-        for time_stamp, price in self.time2prices.items():
-            if time_stamp >= min_time_stamp and time_stamp < max_time_stamp:
-                self.timestep_to_prices[time_step] = price
-                return price
-            if time_stamp < min_time_stamp and time_stamp > closest_min:
-                closest_min = time_stamp
-                price_at_closest_min = price
-            if time_stamp >= max_time_stamp and time_stamp < closest_max:
-                closest_min = time_stamp
-                price_at_closest_max = price
+  global_graph_data['wallet'].x = torch.randn(node_count, node_attr_dim)
+  global_graph_data['wallet', 'is_parent_of', 'wallet'].edge_index = \
+    torch.zeros((2, same_addr_relation_count), dtype=torch.long)
+  global_graph_data['wallet', 'is_child_of', 'wallet'].edge_index = \
+    torch.zeros((2, same_addr_relation_count), dtype=torch.long)
+  global_graph_data['wallet', 'transfers_to', 'wallet'].edge_index = \
+    torch.zeros((2, transfer_to_relation_count), dtype=torch.long)
+  global_graph_data['wallet', 'transferred_from', 'wallet'].edge_index = \
+    torch.zeros((2, transfer_to_relation_count), dtype=torch.long)
+  global_graph_data['wallet', 'has_relation_with', 'wallet'].edge_index = \
+    torch.zeros((2, has_relation_count * 2), dtype=torch.long)
+    
+  # populate node features
+  for i in range(node_count):
+    features = idx_to_features[i]
+    global_graph_data['wallet'].x[i, :node_attr_dim] = torch.tensor(idx_to_features[i])
 
-        return (price_at_closest_min + price_at_closest_max) / 2
+  # populate edge_idx for same-as relation
+  for i, (edge, feature) in tqdm(enumerate(same_addr_relations.items())):
+    global_graph_data['wallet', 'is_parent_of', 'wallet'].edge_index[:, i] = \
+      torch.tensor([edge[0], edge[1]])
 
-    def _load_price_data(self):
-        time_to_price = dict()
-        with open(self.price_file, 'r') as reader:
-            for i, line in enumerate(reader):
-                if i == 0:
-                    continue
-                time_stamp, _, _, _, _, _, _, price = line.split(',')
-                time_stamp = datetime.timestamp(parser.parse(time_stamp))
-                price = float(price)
-                time_to_price[time_stamp] = price
-
-        return time_to_price
-
-    def _load_time_conversion(self):
-        timestep_to_stamp = dict()
-        with open(self.time_conversion_file, 'r') as reader:
-            for i, line in enumerate(reader):
-                if i == 0:
-                    continue
-
-                step, min_time, max_time = line.strip().split(',')
-
-                timestep_to_stamp[int(step)] = (datetime.timestamp(parser.parse(min_time)),
-                                                datetime.timestamp(parser.parse(max_time)))
-                self.max_time_step = max(int(step), self.max_time_step)
-                self.min_time_step = min(int(step), self.min_time_step)
-        return timestep_to_stamp
-
-    def _find_edge_bfs(self, frontier, edges_to_populate, visited, sampled_time_step, k_hop):
-        if k_hop == 0 or len(frontier) == 0:
-            return
-
-        new_frontier = set()
-        # Add at most 10 incoming/outgoing edges for each node in the frontier
-        for node in frontier:
-            if node in visited:
-                continue
-            visited.add(node)
-            incoming_edge_count = 0
-
-            incoming_candidate_edges = []
-            for predecessor in self._graph.predecessors(node):
-                for idx, edge_info in self._graph.get_edge_data(predecessor, node).items():
-                    if edge_info['time_step'] + self.time_step_interval >= sampled_time_step and \
-                        edge_info['time_step'] <= sampled_time_step:
-                        if predecessor in visited:
-                            continue
-                        visited.add(predecessor)
-                        incoming_candidate_edges.append((predecessor, edge_info))
-
-            if len(incoming_candidate_edges) > self.incoming_sampling:
-                incoming_candidate_edges = random.choices(incoming_candidate_edges, k=self.incoming_sampling)
-
-            outgoing_candidate_edges = []
-            for successor in self._graph.successors(node):
-                for idx, edge_info in self._graph.get_edge_data(node, successor).items():
-                    if edge_info['time_step'] + self.time_step_interval >= sampled_time_step and \
-                        edge_info['time_step'] <= sampled_time_step:
-                        if successor in visited:
-                            continue
-                        visited.add(successor)
-                        outgoing_candidate_edges.append((successor, edge_info))
-
-            if len(outgoing_candidate_edges) > self.outgoing_sampling:
-                outgoing_candidate_edges = random.choices(outgoing_candidate_edges, k=self.outgoing_sampling)
-
-            for (predecessor, edge_info) in incoming_candidate_edges:
-                edges_to_populate.append((predecessor, node, edge_info))
-                new_frontier.add(predecessor)
-
-            for (successor, edge_info) in outgoing_candidate_edges:
-                edges_to_populate.append((node, successor, edge_info))
-                new_frontier.add(successor)
-
-        self._find_edge_bfs(new_frontier, edges_to_populate, visited, sampled_time_step, k_hop-1)
+  # populate edge_idx for transfer-to relation
+  for i, (edge, feature) in tqdm(enumerate(transfer_to_relation.items())):
+    global_graph_data['wallet', 'transfers_to', 'wallet'].edge_index[:, i] = \
+      torch.tensor([edge[0], edge[1]])
+  return global_graph_data, addr_time_step_to_index, \
+    same_addr_relations, transfer_to_relation, latest_addr_appearnce, idx_to_addr, addr_node_count
+    
